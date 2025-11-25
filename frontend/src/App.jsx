@@ -11,6 +11,8 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [imageName, setImageName] = useState('');
+  const [userLabel, setUserLabel] = useState('');
 
   const handleDrag = useCallback((e) => {
     e.preventDefault();
@@ -66,6 +68,14 @@ function App() {
 
     const formData = new FormData();
     formData.append('file', file);
+    
+    // Add image name and user label if provided
+    if (imageName) {
+      formData.append('image_name', imageName);
+    }
+    if (userLabel) {
+      formData.append('user_label', userLabel);
+    }
 
     try {
       // Simulate progress stages
@@ -119,6 +129,8 @@ function App() {
     setImagePreview(null);
     setResult(null);
     setError(null);
+    setImageName('');
+    setUserLabel('');
   };
 
   return (
@@ -208,6 +220,45 @@ function App() {
                 <p className="text-gray-400 text-sm">
                   {(file.size / 1024).toFixed(2)} KB
                 </p>
+                
+                {/* Experiment Input Fields */}
+                <div className="mt-6 space-y-3 max-w-md mx-auto">
+                  <div>
+                    <label className="block text-sm font-medium text-cyan-400 mb-1">
+                      Image Name (for database)
+                    </label>
+                    <input
+                      type="text"
+                      value={imageName}
+                      onChange={(e) => setImageName(e.target.value)}
+                      placeholder="e.g., test_image_001"
+                      className="w-full px-4 py-2 bg-gray-800 border border-cyan-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-cyan-400 mb-1">
+                      Your Label (ground truth)
+                    </label>
+                    <select
+                      value={userLabel}
+                      onChange={(e) => setUserLabel(e.target.value)}
+                      className="w-full px-4 py-2 bg-gray-800 border border-cyan-500/30 rounded-lg text-white focus:outline-none focus:border-cyan-400"
+                    >
+                      <option value="">Select label...</option>
+                      <option value="AI">AI Generated</option>
+                      <option value="Real">Real Photo</option>
+                      <option value="Smartphone">Smartphone Photo</option>
+                      <option value="DSLR">DSLR Photo</option>
+                      <option value="Edited">Edited Photo</option>
+                      <option value="Unknown">Unknown</option>
+                    </select>
+                  </div>
+                  {imageName && userLabel && (
+                    <p className="text-xs text-green-400 text-center">
+                      ✓ This experiment will be saved to database
+                    </p>
+                  )}
+                </div>
                 
                 <div className="flex gap-4 justify-center mt-6">
                   <button
@@ -344,62 +395,6 @@ function App() {
                 </div>
               </div>
             </div>
-
-            {/* AI Reasoning Card */}
-            {result.detection.ai_reasoning && (
-              <div className="mb-8 p-6 rounded-lg bg-blue-500/10 border-2 border-blue-500">
-                <div className="flex items-start gap-4">
-                  <svg className="w-8 h-8 text-blue-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-blue-400 mb-2">
-                      🤖 AI Reasoning Verification
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      <div className="bg-gray-800/50 p-3 rounded">
-                        <p className="text-xs text-gray-400">Verdict</p>
-                        <p className={`text-lg font-bold ${
-                          result.detection.ai_reasoning.verdict === 'REAL' ? 'text-green-400' :
-                          result.detection.ai_reasoning.verdict === 'FAKE' ? 'text-red-400' :
-                          'text-yellow-400'
-                        }`}>
-                          {result.detection.ai_reasoning.verdict}
-                        </p>
-                      </div>
-                      <div className="bg-gray-800/50 p-3 rounded">
-                        <p className="text-xs text-gray-400">Category</p>
-                        <p className="text-lg font-bold text-blue-400">
-                          {result.detection.ai_reasoning.sub_category.replace(/_/g, ' ')}
-                        </p>
-                      </div>
-                      <div className="bg-gray-800/50 p-3 rounded">
-                        <p className="text-xs text-gray-400">AI Confidence</p>
-                        <p className="text-lg font-bold text-blue-400">
-                          {result.detection.ai_reasoning.confidence_score}%
-                        </p>
-                      </div>
-                    </div>
-                    <div className="bg-gray-800/50 p-4 rounded mb-3">
-                      <p className="text-sm font-semibold text-blue-300 mb-2">🔍 Primary Evidence:</p>
-                      <p className="text-sm text-gray-300">{result.detection.ai_reasoning.primary_smoking_gun}</p>
-                    </div>
-                    <div className="bg-gray-800/50 p-4 rounded mb-3">
-                      <p className="text-sm font-semibold text-blue-300 mb-2">💭 Reasoning Chain:</p>
-                      <ol className="list-decimal list-inside space-y-1">
-                        {result.detection.ai_reasoning.reasoning_chain.map((step, idx) => (
-                          <li key={idx} className="text-xs text-gray-300">{step}</li>
-                        ))}
-                      </ol>
-                    </div>
-                    <div className="bg-gray-800/50 p-4 rounded">
-                      <p className="text-sm font-semibold text-blue-300 mb-2">📝 Explanation:</p>
-                      <p className="text-sm text-gray-300">{result.detection.ai_reasoning.human_readable_explanation}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Main Content: 2 Column Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -654,6 +649,62 @@ function App() {
                 </p>
               </div>
             </div>
+
+            {/* AI Reasoning Card - Backup Reference */}
+            {result.detection.ai_reasoning && (
+              <div className="mt-8 p-6 rounded-lg bg-blue-500/10 border-2 border-blue-500">
+                <div className="flex items-start gap-4">
+                  <svg className="w-8 h-8 text-blue-500 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold text-blue-400 mb-2">
+                      🤖 AI Reasoning Verification (Backup)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div className="bg-gray-800/50 p-3 rounded">
+                        <p className="text-xs text-gray-400">Verdict</p>
+                        <p className={`text-lg font-bold ${
+                          result.detection.ai_reasoning.verdict === 'REAL' ? 'text-green-400' :
+                          result.detection.ai_reasoning.verdict === 'FAKE' ? 'text-red-400' :
+                          'text-yellow-400'
+                        }`}>
+                          {result.detection.ai_reasoning.verdict}
+                        </p>
+                      </div>
+                      <div className="bg-gray-800/50 p-3 rounded">
+                        <p className="text-xs text-gray-400">Category</p>
+                        <p className="text-lg font-bold text-blue-400">
+                          {result.detection.ai_reasoning.sub_category.replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                      <div className="bg-gray-800/50 p-3 rounded">
+                        <p className="text-xs text-gray-400">AI Confidence</p>
+                        <p className="text-lg font-bold text-blue-400">
+                          {result.detection.ai_reasoning.confidence_score}%
+                        </p>
+                      </div>
+                    </div>
+                    <div className="bg-gray-800/50 p-4 rounded mb-3">
+                      <p className="text-sm font-semibold text-blue-300 mb-2">🔍 Primary Evidence:</p>
+                      <p className="text-sm text-gray-300">{result.detection.ai_reasoning.primary_smoking_gun}</p>
+                    </div>
+                    <div className="bg-gray-800/50 p-4 rounded mb-3">
+                      <p className="text-sm font-semibold text-blue-300 mb-2">💭 Reasoning Chain:</p>
+                      <ol className="list-decimal list-inside space-y-1">
+                        {result.detection.ai_reasoning.reasoning_chain.map((step, idx) => (
+                          <li key={idx} className="text-xs text-gray-300">{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div className="bg-gray-800/50 p-4 rounded">
+                      <p className="text-sm font-semibold text-blue-300 mb-2">📝 Explanation:</p>
+                      <p className="text-sm text-gray-300">{result.detection.ai_reasoning.human_readable_explanation}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

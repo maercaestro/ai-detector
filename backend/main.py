@@ -1,17 +1,26 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import cv2
 import numpy as np
 from scipy import fftpack
 from scipy.stats import gennorm
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import json
-from groq import Groq
+from openai import OpenAI
 import os
+import shutil
+from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv
+import database
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Create uploads directory if it doesn't exist
+UPLOADS_DIR = Path("uploads")
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="AI Image Detector API")
 
@@ -23,6 +32,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup."""
+    database.init_database()
+    print("🚀 Server started successfully")
+
 
 
 def get_azimuthal_average(image_bytes: bytes) -> tuple[List[float], List[float]]:
@@ -569,7 +586,7 @@ def analyze_simplest_patch(img, patch_size=32):
 
 def get_ai_reasoning(metrics_data: Dict) -> Dict:
     """
-    Uses GPT-oss-120b reasoning model to verify detection results.
+    Uses GPT-4o-mini model to verify detection results.
     Provides qualitative analysis based on physics and statistics.
     
     Args:
@@ -579,7 +596,7 @@ def get_ai_reasoning(metrics_data: Dict) -> Dict:
         Dictionary with AI reasoning verdict
     """
     try:
-        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         prompt = f"""You are the "Forensic Adjudicator," a specialized AI designed to detect synthetic imagery. You do not guess; you analyze statistical and physical anomalies based on a 7-Branch Weighted Fusion System.
 
@@ -633,15 +650,14 @@ Return ONLY valid JSON with this structure:
 }}"""
 
         completion = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="gpt-4o-mini",
             messages=[{
                 "role": "user",
                 "content": prompt
             }],
-            temperature=1,
-            max_completion_tokens=8192,
+            temperature=0.7,
+            max_tokens=2048,
             top_p=1,
-            reasoning_effort="medium",
             stream=False,
             stop=None
         )
@@ -1142,15 +1158,21 @@ async def root():
 
 
 @app.post("/analyze")
-async def analyze_image(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def analyze_image(
+    file: UploadFile = File(...),
+    image_name: Optional[str] = Form(None),
+    user_label: Optional[str] = Form(None)
+) -> Dict[str, Any]:
     """
     Analyzes an uploaded image for AI-generation artifacts.
     
     Args:
         file: Uploaded image file
+        image_name: User-provided name for the experiment
+        user_label: User's ground truth label (e.g., "AI", "Real", "Smartphone")
         
     Returns:
-        JSON object with frequency and power arrays
+        JSON object with frequency, power, and detection results
     """
     # Validate file type
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -1162,6 +1184,14 @@ async def analyze_image(file: UploadFile = File(...)) -> Dict[str, Any]:
     try:
         # Read file contents
         contents = await file.read()
+        file_size = len(contents)
+        
+        # Get image dimensions
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Invalid image format")
+        height, width = img.shape[:2]
         
         # Perform analysis
         frequency, power = get_azimuthal_average(contents)
@@ -1169,10 +1199,40 @@ async def analyze_image(file: UploadFile = File(...)) -> Dict[str, Any]:
         # Detect AI generation (pass image bytes for noise analysis)
         detection_result = detect_ai_generation(frequency, power, contents)
         
+        # Save to database if name and label provided
+        experiment_id = None
+        image_path = None
+        if image_name and user_label:
+            try:
+                # Save the image file
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_filename = f"{timestamp}_{image_name}"
+                # Remove any path separators from filename
+                safe_filename = safe_filename.replace("/", "_").replace("\\", "_")
+                image_path = UPLOADS_DIR / safe_filename
+                
+                # Save the uploaded file
+                with open(image_path, "wb") as buffer:
+                    buffer.write(contents)
+                
+                experiment_id = database.save_experiment(
+                    image_name=image_name,
+                    user_label=user_label,
+                    file_size=file_size,
+                    image_dimensions=(width, height),
+                    detection_result=detection_result,
+                    image_path=str(image_path)
+                )
+                print(f"✅ Saved experiment #{experiment_id}: {image_name} (label: {user_label})")
+            except Exception as db_error:
+                print(f"⚠️ Database error: {db_error}")
+                # Don't fail the request if database save fails
+        
         return {
             "frequency": frequency,
             "power": power,
-            "detection": detection_result
+            "detection": detection_result,
+            "experiment_id": experiment_id
         }
         
     except ValueError as e:
@@ -1182,6 +1242,65 @@ async def analyze_image(file: UploadFile = File(...)) -> Dict[str, Any]:
             status_code=500,
             detail=f"Error processing image: {str(e)}"
         )
+
+
+@app.get("/experiments")
+async def get_experiments() -> Dict[str, Any]:
+    """Get all experiments from the database."""
+    try:
+        experiments = database.get_all_experiments()
+        stats = database.get_experiment_statistics()
+        return {
+            "experiments": experiments,
+            "statistics": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get("/experiments/{experiment_id}")
+async def get_experiment(experiment_id: int) -> Dict[str, Any]:
+    """Get a specific experiment by ID."""
+    try:
+        experiment = database.get_experiment_by_id(experiment_id)
+        if not experiment:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+        return experiment
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get("/experiments/{experiment_id}/image")
+async def get_experiment_image(experiment_id: int):
+    """Get the saved image for a specific experiment."""
+    try:
+        experiment = database.get_experiment_by_id(experiment_id)
+        if not experiment:
+            raise HTTPException(status_code=404, detail="Experiment not found")
+        
+        image_path = experiment.get("image_path")
+        if not image_path or not os.path.exists(image_path):
+            raise HTTPException(status_code=404, detail="Image file not found")
+        
+        return FileResponse(image_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving image: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get("/experiments/label/{user_label}")
+async def get_experiments_by_label(user_label: str) -> List[Dict]:
+    """Get all experiments with a specific label."""
+    try:
+        experiments = database.get_experiments_by_label(user_label)
+        return experiments
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 if __name__ == "__main__":

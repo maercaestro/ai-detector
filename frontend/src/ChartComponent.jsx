@@ -36,10 +36,10 @@ const ChartComponent = ({ data }) => {
       <h2 className="text-2xl font-bold text-cyan-400 mb-4">
         Noise Distribution Analysis (GGD Shape β = {ggdShape.toFixed(3)})
       </h2>
-      <ResponsiveContainer width="100%" height="90%">
+      <ResponsiveContainer width="100%" height="85%">
         <ComposedChart
           data={chartData}
-          margin={{ top: 5, right: 30, left: 20, bottom: 25 }}
+          margin={{ top: 10, right: 30, left: 20, bottom: 50 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
           
@@ -80,11 +80,13 @@ const ChartComponent = ({ data }) => {
           <Legend 
             wrapperStyle={{ 
               color: '#9ca3af',
-              paddingTop: '10px'
+              paddingTop: '15px',
+              paddingBottom: '5px'
             }}
             iconType="line"
             verticalAlign="bottom"
-            height={36}
+            align="center"
+            height={40}
           />
           
           {/* Reference line at x = 0 (mean) */}

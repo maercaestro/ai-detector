@@ -3,6 +3,15 @@
 .env.local
 .env.*.local
 
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploaded images (keep directory with .gitkeep)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]
